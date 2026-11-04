@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #030706;
+    color: #e2e8f0;
+    font-family: 'Rajdhani', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+}
+
+@keyframes omnitrixPulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 255, 102, 0.4), inset 0 0 15px rgba(0, 255, 102, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 35px rgba(0, 255, 102, 0.8), inset 0 0 25px rgba(0, 255, 102, 0.6);
+  }
+}
+
+@keyframes greenGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(0, 255, 102, 0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(0, 255, 102, 0.9));
+  }
+}
+
+.omnitrix-glow {
+  animation: omnitrixPulse 2.5s infinite ease-in-out;
+}
+
+.glow-green {
+  animation: greenGlow 2s infinite ease-in-out;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #06140e;
+}
+::-webkit-scrollbar-thumb {
+  background: #00ff66;
+  border-radius: 3px;
+}

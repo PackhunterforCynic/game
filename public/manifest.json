@@ -1,0 +1,18 @@
+{
+  "name": "Ben 10: Alien Battle Arena",
+  "short_name": "Ben10Arena",
+  "description": "2D Sci-Fi Arcade Fighting Game with 10 Ben 10 Alien Heroes",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#030706",
+  "theme_color": "#00ff66",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+
