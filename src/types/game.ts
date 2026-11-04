@@ -9,6 +9,10 @@ export type ScreenType =
 
 export type GameMode = 'vs-cpu' | 'local-pvp' | 'online-pvp';
 
+export type MultiplayerRole = 'host' | 'client' | 'none';
+
+export type OnlineConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
 export type AIDifficulty = 'easy' | 'normal' | 'hard';
 
 export type AlienId = 
@@ -116,9 +120,24 @@ export interface MatchStats {
 }
 
 export interface AudioSettings {
-  sfxVolume: number; // 0 to 1
-  musicVolume: number; // 0 to 1
-  voiceVolume: number; // 0 to 1
+  sfxVolume: number;
+  musicVolume: number;
+  voiceVolume: number;
   muted: boolean;
 }
 
+export interface NetPacket {
+  type: 
+    | 'SELECTION'
+    | 'LOCK_IN'
+    | 'ARENA'
+    | 'START_BATTLE'
+    | 'INPUT'
+    | 'STATE_SYNC'
+    | 'REMATCH'
+    | 'PING'
+    | 'PONG';
+  sender: 'host' | 'client';
+  payload: any;
+  timestamp: number;
+}

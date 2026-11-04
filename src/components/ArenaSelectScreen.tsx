@@ -1,29 +1,61 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { ARENAS, ARENA_IDS } from '../game/data/arenas';
 import { ArenaId } from '../types/game';
 import { soundManager } from '../audio/soundManager';
-import { ArrowLeft, MapPin, Play, Wind, Sparkles, Orbit } from 'lucide-react';
+import { multiplayerManager } from '../multiplayer/multiplayerManager';
+import { ArrowLeft, MapPin, Play, Wind, Sparkles, Orbit, Wifi } from 'lucide-react';
 
 export const ArenaSelectScreen: React.FC = () => {
   const {
+    gameMode,
+    multiplayerRole,
     selectedArena,
     setArena,
     setScreen,
     startVsTransition,
   } = useGameStore();
 
+  const isOnline = gameMode === 'online-pvp';
+  const isHost = multiplayerRole === 'host';
+  const activeArena = ARENAS[selectedArena];
+
+  // Client listens for host stage select and battle launch
+  useEffect(() => {
+    if (!isOnline) return;
+
+    const unsub = multiplayerManager.onPacket((packet) => {
+      if (packet.type === 'ARENA') {
+        if (packet.payload?.arena) {
+          setArena(packet.payload.arena);
+        }
+      } else if (packet.type === 'START_BATTLE') {
+        soundManager.playOmnitrixTransform();
+        startVsTransition();
+      }
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [isOnline]);
+
   const handleSelectArena = (id: ArenaId) => {
+    if (isOnline && !isHost) return; // Only host chooses arena in online mode
     soundManager.playOmnitrixSelect();
     setArena(id);
+    if (isOnline) {
+      multiplayerManager.sendArena(id);
+    }
   };
 
   const handleConfirmArena = () => {
     soundManager.playOmnitrixTransform();
+    if (isOnline) {
+      multiplayerManager.sendStartBattle();
+    }
     startVsTransition();
   };
-
-  const activeArena = ARENAS[selectedArena];
 
   return (
     <div className="relative w-screen h-screen flex flex-col justify-between bg-black text-white p-6 md:p-10 select-none overflow-hidden">
@@ -49,11 +81,20 @@ export const ArenaSelectScreen: React.FC = () => {
         </button>
 
         <div className="text-center">
-          <h2 className="text-xl md:text-2xl font-black italic tracking-widest text-emerald-400">
-            SELECT BATTLE ARENA
-          </h2>
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-xl md:text-2xl font-black italic tracking-widest text-emerald-400">
+              SELECT BATTLE ARENA
+            </h2>
+            {isOnline && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/40">
+                <Wifi className="w-3 h-3" /> ONLINE SYNC
+              </span>
+            )}
+          </div>
           <p className="text-xs text-neutral-400 uppercase tracking-widest">
-            CHOOSE COMBAT ENVIRONMENT
+            {isOnline 
+              ? (isHost ? 'HOST SELECTING ARENA' : 'WAITING FOR HOST TO PICK ARENA...') 
+              : 'CHOOSE COMBAT ENVIRONMENT'}
           </p>
         </div>
 
@@ -125,13 +166,19 @@ export const ArenaSelectScreen: React.FC = () => {
 
       {/* Confirm & Launch Battle Button */}
       <div className="relative z-10 flex flex-col items-center gap-3">
-        <button
-          onClick={handleConfirmArena}
-          className="flex items-center gap-3 px-10 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-base rounded-full uppercase tracking-wider shadow-[0_0_35px_rgba(0,255,102,0.7)] transition-all transform hover:scale-105 active:scale-95"
-        >
-          <Play className="w-5 h-5 fill-black" />
-          <span>START BATTLE IN {activeArena.name.toUpperCase()}</span>
-        </button>
+        {(!isOnline || isHost) ? (
+          <button
+            onClick={handleConfirmArena}
+            className="flex items-center gap-3 px-10 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-base rounded-full uppercase tracking-wider shadow-[0_0_35px_rgba(0,255,102,0.7)] transition-all transform hover:scale-105 active:scale-95"
+          >
+            <Play className="w-5 h-5 fill-black" />
+            <span>START BATTLE IN {activeArena.name.toUpperCase()}</span>
+          </button>
+        ) : (
+          <div className="px-8 py-3.5 bg-neutral-900 border border-neutral-800 rounded-full text-xs font-mono text-neutral-400">
+            WAITING FOR HOST TO LAUNCH BATTLE IN {activeArena.name.toUpperCase()}...
+          </div>
+        )}
         <span className="text-xs text-neutral-400 uppercase tracking-widest">
           PREPARE FOR ROUND 1
         </span>
@@ -139,4 +186,3 @@ export const ArenaSelectScreen: React.FC = () => {
     </div>
   );
 };
-

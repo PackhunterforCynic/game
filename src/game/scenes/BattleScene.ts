@@ -7,6 +7,7 @@ import { FighterAI } from '../ai/fighterAI';
 import { createArenaBackground } from '../arenas/arenaRenderer';
 import { soundManager } from '../../audio/soundManager';
 import { FighterInputState } from '../../types/game';
+import { multiplayerManager } from '../../multiplayer/multiplayerManager';
 
 export class BattleScene extends Phaser.Scene {
   public player1!: Fighter;
@@ -27,6 +28,11 @@ export class BattleScene extends Phaser.Scene {
 
   // Mobile virtual input overrides
   public mobileInputP1: Partial<FighterInputState> = {};
+
+  // Online Multiplayer State
+  private remoteOpponentInput: FighterInputState | null = null;
+  private netSyncTimer: number = 0;
+  private unsubNetPacket: (() => void) | null = null;
 
   constructor() {
     super({ key: 'BattleScene' });
@@ -61,8 +67,6 @@ export class BattleScene extends Phaser.Scene {
     // Collisions with floor platform
     this.physics.add.collider(this.player1, this.groundPlatform);
     this.physics.add.collider(this.player2, this.groundPlatform);
-
-    // Optional collision between fighters so they can't simply walk through each other
     this.physics.add.collider(this.player1, this.player2);
 
     // 4. Setup AI if vs-cpu
@@ -72,16 +76,35 @@ export class BattleScene extends Phaser.Scene {
       this.fighterAI = null;
     }
 
-    // 5. Setup Projectile listener
+    // 5. Setup Online Packet Listener
+    if (store.gameMode === 'online-pvp') {
+      this.unsubNetPacket = multiplayerManager.onPacket((packet) => {
+        if (packet.type === 'INPUT') {
+          this.remoteOpponentInput = packet.payload.input;
+        } else if (packet.type === 'STATE_SYNC' && store.multiplayerRole === 'client') {
+          // Client reconciles host state
+          const s = packet.payload;
+          if (this.player1 && this.player2) {
+            this.player1.currentHealth = s.p1Hp;
+            this.player1.energy = s.p1Energy;
+            this.player2.currentHealth = s.p2Hp;
+            this.player2.energy = s.p2Energy;
+            this.roundTime = s.roundTimer;
+          }
+        }
+      });
+    }
+
+    // 6. Setup Projectile listener
     this.events.on('spawn_projectile', this.spawnProjectile, this);
 
-    // 6. Setup Keyboard Input Controls
+    // 7. Setup Keyboard Input Controls
     this.setupKeyboardControls();
 
-    // 7. Start Round Sequence
+    // 8. Start Round Sequence
     this.startRoundSequence();
 
-    // 8. Start procedural battle music
+    // 9. Start procedural battle music
     soundManager.startBattleMusic(store.selectedArena);
   }
 
@@ -102,7 +125,7 @@ export class BattleScene extends Phaser.Scene {
       block: Phaser.Input.Keyboard.KeyCodes.SHIFT,
     });
 
-    // Player 2 Keys (for Local 2P): Arrows, NumPad 1,2,3,5 / U,O,P
+    // Player 2 Keys (for Local 2P): Arrows, NumPad / U, O, Y, P
     this.p2Keys = this.input.keyboard.addKeys({
       up: Phaser.Input.Keyboard.KeyCodes.UP,
       down: Phaser.Input.Keyboard.KeyCodes.DOWN,
@@ -114,7 +137,6 @@ export class BattleScene extends Phaser.Scene {
       special: Phaser.Input.Keyboard.KeyCodes.NUMPAD_FIVE,
       ultimate: Phaser.Input.Keyboard.KeyCodes.NUMPAD_ZERO,
       block: Phaser.Input.Keyboard.KeyCodes.NUMPAD_THREE,
-      // Fallback keys if no numpad
       punchAlt: Phaser.Input.Keyboard.KeyCodes.U,
       kickAlt: Phaser.Input.Keyboard.KeyCodes.O,
       grabAlt: Phaser.Input.Keyboard.KeyCodes.Y,
@@ -132,14 +154,12 @@ export class BattleScene extends Phaser.Scene {
     const roundNum = store.currentRound;
     const roundAnnouncement = roundNum === 3 ? 'FINAL ROUND' : `ROUND ${roundNum}`;
 
-    // Announce Round
     soundManager.announce(roundAnnouncement);
 
     this.time.delayedCall(1600, () => {
       soundManager.announce('FIGHT!');
       this.roundInProgress = true;
 
-      // Start 1-second countdown timer
       if (this.timerEvent) this.timerEvent.destroy();
       this.timerEvent = this.time.addEvent({
         delay: 1000,
@@ -220,16 +240,61 @@ export class BattleScene extends Phaser.Scene {
       return !p.isExpired;
     });
 
-    // Handle Player 1 Input (Combines keyboard and mobile controls)
-    const p1Input = this.gatherP1Input();
-    this.player1.handleInput(p1Input, delta);
-
-    // Handle Player 2 Input (AI or Local Player 2)
     const store = useGameStore.getState();
-    if (store.gameMode === 'vs-cpu' && this.fighterAI) {
-      const aiInput = this.fighterAI.update(delta);
-      this.player2.handleInput(aiInput, delta);
-    } else {
+
+    // 1. ONLINE MULTIPLAYER INPUT HANDLING
+    if (store.gameMode === 'online-pvp') {
+      const localInput = this.gatherP1Input();
+      multiplayerManager.sendInput(localInput);
+
+      if (store.multiplayerRole === 'host') {
+        // Host is P1, remote is P2
+        this.player1.handleInput(localInput, delta);
+        if (this.remoteOpponentInput) {
+          this.player2.handleInput(this.remoteOpponentInput, delta);
+        }
+
+        // Host authoritative state sync periodically (10Hz)
+        this.netSyncTimer += delta;
+        if (this.netSyncTimer >= 100) {
+          this.netSyncTimer = 0;
+          multiplayerManager.sendStateSync({
+            p1Hp: this.player1.currentHealth,
+            p1Energy: this.player1.energy,
+            p1X: Math.round(this.player1.x),
+            p1Y: Math.round(this.player1.y),
+            p1State: this.player1.fighterState,
+            p2Hp: this.player2.currentHealth,
+            p2Energy: this.player2.energy,
+            p2X: Math.round(this.player2.x),
+            p2Y: Math.round(this.player2.y),
+            p2State: this.player2.fighterState,
+            roundTimer: this.roundTime,
+          });
+        }
+      } else {
+        // Client is P2, remote is P1
+        this.player2.handleInput(localInput, delta);
+        if (this.remoteOpponentInput) {
+          this.player1.handleInput(this.remoteOpponentInput, delta);
+        }
+      }
+    } 
+    // 2. VS CPU
+    else if (store.gameMode === 'vs-cpu') {
+      const p1Input = this.gatherP1Input();
+      this.player1.handleInput(p1Input, delta);
+
+      if (this.fighterAI) {
+        const aiInput = this.fighterAI.update(delta);
+        this.player2.handleInput(aiInput, delta);
+      }
+    } 
+    // 3. LOCAL 2-PLAYER
+    else {
+      const p1Input = this.gatherP1Input();
+      this.player1.handleInput(p1Input, delta);
+
       const p2Input = this.gatherP2Input();
       this.player2.handleInput(p2Input, delta);
     }
@@ -244,7 +309,6 @@ export class BattleScene extends Phaser.Scene {
     const k = this.p1Keys;
     const m = this.mobileInputP1;
 
-    // Cycle through specials (L triggers sp1, sp2 or sp3 depending on energy level)
     const specialPressed = Phaser.Input.Keyboard.JustDown(k.special) || !!m.special1;
     let sp1 = false;
     let sp2 = false;
@@ -305,7 +369,6 @@ export class BattleScene extends Phaser.Scene {
     this.roundInProgress = false;
     soundManager.announce('TIME OVER!');
 
-    // Compare HP
     if (this.player1.currentHealth > this.player2.currentHealth) {
       this.concludeRound(1);
     } else {
@@ -355,7 +418,6 @@ export class BattleScene extends Phaser.Scene {
           p2UltimatesUsed: this.player2.ultimatesUsed,
         });
       } else {
-        // Reset for next round
         const width = this.scale.width;
         const height = this.scale.height;
         const floorY = height - 90;
@@ -366,9 +428,9 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  // Scene lifecycle cleanup
   stopScene() {
     soundManager.stopBattleMusic();
     if (this.timerEvent) this.timerEvent.destroy();
+    if (this.unsubNetPacket) this.unsubNetPacket();
   }
 }

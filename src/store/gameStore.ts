@@ -6,7 +6,9 @@ import {
   AlienId, 
   ArenaId, 
   MatchStats, 
-  AudioSettings 
+  AudioSettings,
+  MultiplayerRole,
+  OnlineConnectionStatus
 } from '../types/game';
 
 interface GameState {
@@ -19,6 +21,13 @@ interface GameState {
   isPlayer1Ready: boolean;
   isPlayer2Ready: boolean;
   
+  // Online Multiplayer State
+  multiplayerRole: MultiplayerRole;
+  onlineStatus: OnlineConnectionStatus;
+  onlinePing: number;
+  onlineRoomCode: string;
+  isHost: boolean;
+
   // Round system
   currentRound: number;
   p1RoundsWon: number;
@@ -33,8 +42,6 @@ interface GameState {
   showSettings: boolean;
   showCollection: boolean;
   showOnlineModal: boolean;
-  onlineRoomCode: string;
-  isHost: boolean;
   isPaused: boolean;
   
   // Audio settings
@@ -48,6 +55,8 @@ interface GameState {
   randomizeCharacter: (player: 1 | 2) => void;
   setArena: (arena: ArenaId) => void;
   setPlayerReady: (player: 1 | 2, ready: boolean) => void;
+  setMultiplayerRole: (role: MultiplayerRole) => void;
+  setOnlineStatus: (status: OnlineConnectionStatus, ping?: number) => void;
   startVsTransition: () => void;
   startBattle: () => void;
   recordRoundWinner: (winner: 1 | 2) => { matchOver: boolean; winner: 1 | 2 | null };
@@ -91,6 +100,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   isPlayer1Ready: false,
   isPlayer2Ready: false,
 
+  multiplayerRole: 'none',
+  onlineStatus: 'disconnected',
+  onlinePing: 0,
+  onlineRoomCode: '',
+  isHost: true,
+
   currentRound: 1,
   p1RoundsWon: 0,
   p2RoundsWon: 0,
@@ -102,8 +117,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   showSettings: false,
   showCollection: false,
   showOnlineModal: false,
-  onlineRoomCode: '',
-  isHost: true,
   isPaused: false,
 
   audioSettings: {
@@ -143,6 +156,9 @@ export const useGameStore = create<GameState>((set, get) => ({
       set({ isPlayer2Ready: ready });
     }
   },
+
+  setMultiplayerRole: (role) => set({ multiplayerRole: role }),
+  setOnlineStatus: (status, ping = 0) => set({ onlineStatus: status, onlinePing: ping }),
 
   startVsTransition: () => {
     set({ currentScreen: 'VS_SCREEN' });
@@ -232,4 +248,3 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
   },
 }));
-

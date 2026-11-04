@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { CHARACTERS, CHARACTER_IDS } from '../game/data/characters';
 import { AlienId } from '../types/game';
 import { soundManager } from '../audio/soundManager';
-import { Shuffle, ArrowLeft, CheckCircle2, Shield, Flame, Zap, Crosshair } from 'lucide-react';
+import { multiplayerManager } from '../multiplayer/multiplayerManager';
+import { Shuffle, ArrowLeft, CheckCircle2, Wifi } from 'lucide-react';
 
 export const CharacterSelectScreen: React.FC = () => {
   const {
     gameMode,
+    multiplayerRole,
     player1Character,
     player2Character,
     selectCharacter,
@@ -15,32 +17,102 @@ export const CharacterSelectScreen: React.FC = () => {
     setScreen,
   } = useGameStore();
 
-  const [activePlayerSelecting, setActivePlayerSelecting] = useState<1 | 2>(1);
-  const [p1Locked, setP1Locked] = useState(false);
-  const [p2Locked, setP2Locked] = useState(gameMode === 'vs-cpu'); // CPU locked by default
+  const isOnline = gameMode === 'online-pvp';
+  const isHost = multiplayerRole === 'host';
+  const isClient = multiplayerRole === 'client';
 
-  const currentHoverId = activePlayerSelecting === 1 ? player1Character : player2Character;
+  // In online mode, host controls P1, client controls P2
+  const activePlayerSelecting: 1 | 2 = isOnline ? (isHost ? 1 : 2) : 1;
+  const [localActivePlayer, setLocalActivePlayer] = useState<1 | 2>(1);
+
+  const [p1Locked, setP1Locked] = useState(false);
+  const [p2Locked, setP2Locked] = useState(gameMode === 'vs-cpu');
+
+  const currentHoverId = isOnline
+    ? (isHost ? player1Character : player2Character)
+    : (localActivePlayer === 1 ? player1Character : player2Character);
   const currentAlien = CHARACTERS[currentHoverId];
+
+  // Online Packet Synchronization
+  useEffect(() => {
+    if (!isOnline) return;
+
+    const unsub = multiplayerManager.onPacket((packet) => {
+      if (packet.type === 'SELECTION') {
+        const char = packet.payload.character as AlienId;
+        if (isHost) {
+          // Client picked P2
+          selectCharacter(2, char);
+        } else {
+          // Host picked P1
+          selectCharacter(1, char);
+        }
+      } else if (packet.type === 'LOCK_IN') {
+        if (isHost) {
+          setP2Locked(packet.payload.ready);
+        } else {
+          setP1Locked(packet.payload.ready);
+        }
+      } else if (packet.type === 'ARENA') {
+        // Host selected arena, move client
+        setScreen('ARENA_SELECT');
+      }
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [isOnline, isHost]);
 
   const handleSelect = (id: AlienId) => {
     soundManager.playOmnitrixSelect();
-    selectCharacter(activePlayerSelecting, id);
+    if (isOnline) {
+      if (isHost) {
+        selectCharacter(1, id);
+      } else {
+        selectCharacter(2, id);
+      }
+      multiplayerManager.sendSelection(id);
+    } else {
+      selectCharacter(localActivePlayer, id);
+    }
   };
 
   const handleRandom = () => {
     soundManager.playOmnitrixActivate();
-    randomizeCharacter(activePlayerSelecting);
+    if (isOnline) {
+      randomizeCharacter(isHost ? 1 : 2);
+      const chosen = isHost ? player1Character : player2Character;
+      multiplayerManager.sendSelection(chosen);
+    } else {
+      randomizeCharacter(localActivePlayer);
+    }
   };
 
   const handleConfirmLockIn = () => {
     soundManager.playOmnitrixTransform();
 
-    if (activePlayerSelecting === 1) {
+    if (isOnline) {
+      if (isHost) {
+        setP1Locked(true);
+        multiplayerManager.sendLockIn(true);
+        if (p2Locked) {
+          setScreen('ARENA_SELECT');
+          multiplayerManager.sendPacket('ARENA', {});
+        }
+      } else {
+        setP2Locked(true);
+        multiplayerManager.sendLockIn(true);
+      }
+      return;
+    }
+
+    // Local / CPU Mode
+    if (localActivePlayer === 1) {
       setP1Locked(true);
       if (gameMode === 'local-pvp') {
-        setActivePlayerSelecting(2);
+        setLocalActivePlayer(2);
       } else {
-        // CPU automatically locks or has picked
         setScreen('ARENA_SELECT');
       }
     } else {
@@ -73,15 +145,20 @@ export const CharacterSelectScreen: React.FC = () => {
         </button>
 
         <div className="text-center">
-          <h2 className="text-xl md:text-2xl font-black italic tracking-widest text-emerald-400">
-            CHOOSE YOUR ALIEN HERO
-          </h2>
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-xl md:text-2xl font-black italic tracking-widest text-emerald-400">
+              CHOOSE YOUR ALIEN HERO
+            </h2>
+            {isOnline && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/40">
+                <Wifi className="w-3 h-3" /> ONLINE SYNC
+              </span>
+            )}
+          </div>
           <p className="text-xs text-neutral-400 uppercase tracking-widest">
-            {gameMode === 'vs-cpu' 
-              ? 'PLAYER 1 SELECTING' 
-              : activePlayerSelecting === 1 
-                ? 'PLAYER 1 SELECTING' 
-                : 'PLAYER 2 SELECTING'}
+            {isOnline
+              ? (isHost ? 'YOU ARE PLAYER 1 (HOST)' : 'YOU ARE PLAYER 2 (GUEST)')
+              : (gameMode === 'vs-cpu' ? 'PLAYER 1 SELECTING' : `PLAYER ${localActivePlayer} SELECTING`)}
           </p>
         </div>
 
@@ -94,20 +171,20 @@ export const CharacterSelectScreen: React.FC = () => {
         </button>
       </div>
 
-      {/* Main Selection Area: Left Preview + Center Roster + Right Stats */}
+      {/* Main Selection Area */}
       <div className="relative z-10 flex-1 grid grid-cols-1 md:grid-cols-12 gap-4 items-center my-3 overflow-hidden">
         
-        {/* Left Column: Player 1 & Player 2 Status Cards */}
+        {/* Left Column: Player Cards */}
         <div className="md:col-span-3 flex flex-col gap-3 justify-center h-full">
           {/* P1 Card */}
           <div className={`p-4 rounded-xl border-2 transition-all ${
-            activePlayerSelecting === 1 
+            (isOnline ? isHost : localActivePlayer === 1)
               ? 'border-emerald-400 bg-emerald-950/40 shadow-[0_0_20px_rgba(0,255,102,0.3)]' 
               : 'border-neutral-800 bg-neutral-950'
           }`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-black tracking-widest text-emerald-400 uppercase">
-                PLAYER 1
+                PLAYER 1 {isOnline && isHost && '(YOU)'}
               </span>
               {p1Locked && (
                 <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-900/60 px-2 py-0.5 rounded">
@@ -119,15 +196,15 @@ export const CharacterSelectScreen: React.FC = () => {
             <div className="text-xs text-neutral-400">{CHARACTERS[player1Character].species}</div>
           </div>
 
-          {/* P2 / CPU Card */}
+          {/* P2 Card */}
           <div className={`p-4 rounded-xl border-2 transition-all ${
-            activePlayerSelecting === 2 
+            (isOnline ? isClient : localActivePlayer === 2)
               ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_20px_rgba(0,210,255,0.3)]' 
               : 'border-neutral-800 bg-neutral-950'
           }`}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-black tracking-widest text-cyan-400 uppercase">
-                {gameMode === 'vs-cpu' ? 'CPU OPPONENT' : 'PLAYER 2'}
+                {isOnline ? `PLAYER 2 ${isClient ? '(YOU)' : '(OPPONENT)'}` : (gameMode === 'vs-cpu' ? 'CPU OPPONENT' : 'PLAYER 2')}
               </span>
               {p2Locked && (
                 <span className="flex items-center gap-1 text-[10px] text-cyan-400 font-bold bg-cyan-900/60 px-2 py-0.5 rounded">
@@ -139,12 +216,14 @@ export const CharacterSelectScreen: React.FC = () => {
             <div className="text-xs text-neutral-400">{CHARACTERS[player2Character].species}</div>
           </div>
 
-          {/* Lock In / Ready Button */}
+          {/* Lock In Button */}
           <button
             onClick={handleConfirmLockIn}
             className="w-full mt-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black rounded-xl text-sm tracking-wider uppercase shadow-[0_0_25px_rgba(0,255,102,0.6)] transition-all transform hover:scale-[1.02] active:scale-95"
           >
-            CONFIRM & LOCK IN →
+            {isOnline 
+              ? (isHost ? (p2Locked ? 'PROCEED TO ARENA →' : 'LOCK IN HERO') : (p2Locked ? 'LOCKED IN!' : 'LOCK IN HERO')) 
+              : 'CONFIRM & LOCK IN →'}
           </button>
         </div>
 
@@ -168,7 +247,6 @@ export const CharacterSelectScreen: React.FC = () => {
                         : 'border-neutral-800 bg-neutral-900/80 hover:border-neutral-500'
                   }`}
                 >
-                  {/* Alien Badge / Color Indicator */}
                   <div 
                     className="w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs"
                     style={{ 
@@ -184,7 +262,6 @@ export const CharacterSelectScreen: React.FC = () => {
                     {alien.name}
                   </span>
 
-                  {/* Player tag indicator */}
                   {isP1 && (
                     <span className="absolute -top-2 -left-1 bg-emerald-500 text-black text-[9px] font-black px-1.5 py-0.2 rounded shadow">
                       P1
@@ -192,7 +269,7 @@ export const CharacterSelectScreen: React.FC = () => {
                   )}
                   {isP2 && (
                     <span className="absolute -top-2 -right-1 bg-cyan-500 text-black text-[9px] font-black px-1.5 py-0.2 rounded shadow">
-                      {gameMode === 'vs-cpu' ? 'CPU' : 'P2'}
+                      P2
                     </span>
                   )}
                 </button>
@@ -201,7 +278,7 @@ export const CharacterSelectScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: Active Alien Lore, Radar Stats & Special Moves */}
+        {/* Right Column: Active Alien Lore & Stats */}
         <div className="md:col-span-4 bg-neutral-950/90 border border-neutral-800 rounded-2xl p-4 flex flex-col justify-between h-full overflow-y-auto">
           <div>
             <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
@@ -325,4 +402,3 @@ export const CharacterSelectScreen: React.FC = () => {
     </div>
   );
 };
-

@@ -1,16 +1,37 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { CHARACTERS } from '../game/data/characters';
 import { soundManager } from '../audio/soundManager';
-import { Trophy, RotateCcw, Users, Home, Flame, Zap, Award } from 'lucide-react';
+import { multiplayerManager } from '../multiplayer/multiplayerManager';
+import { Trophy, RotateCcw, Users, Home, Wifi } from 'lucide-react';
 
 export const ResultScreen: React.FC = () => {
   const {
+    gameMode,
+    multiplayerRole,
     lastMatchStats,
     rematch,
     returnToCharacterSelect,
     returnToMainMenu,
   } = useGameStore();
+
+  const isOnline = gameMode === 'online-pvp';
+
+  // Listen for opponent rematch or change character packets
+  useEffect(() => {
+    if (!isOnline) return;
+
+    const unsub = multiplayerManager.onPacket((packet) => {
+      if (packet.type === 'REMATCH') {
+        soundManager.playOmnitrixTransform();
+        rematch();
+      }
+    });
+
+    return () => {
+      unsub();
+    };
+  }, [isOnline]);
 
   if (!lastMatchStats) {
     return (
@@ -26,6 +47,9 @@ export const ResultScreen: React.FC = () => {
 
   const handleRematch = () => {
     soundManager.playOmnitrixTransform();
+    if (isOnline) {
+      multiplayerManager.sendPacket('REMATCH', {});
+    }
     rematch();
   };
 
@@ -36,6 +60,9 @@ export const ResultScreen: React.FC = () => {
 
   const handleMainMenu = () => {
     soundManager.playOmnitrixSelect();
+    if (isOnline) {
+      multiplayerManager.cleanup();
+    }
     returnToMainMenu();
   };
 
@@ -56,9 +83,18 @@ export const ResultScreen: React.FC = () => {
           <span className="text-xs font-mono font-bold tracking-widest text-emerald-400 uppercase">
             MATCH CONCLUSION
           </span>
+          {isOnline && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-mono bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/40">
+              <Wifi className="w-3 h-3" /> ONLINE MATCH
+            </span>
+          )}
         </div>
         <h1 className="text-4xl md:text-6xl font-black italic tracking-wider text-white drop-shadow-[0_0_20px_rgba(0,255,102,0.6)]">
-          {isP1Winner ? 'VICTORY!' : 'PLAYER 2 WINS!'}
+          {isOnline 
+            ? ((isP1Winner && multiplayerRole === 'host') || (!isP1Winner && multiplayerRole === 'client') 
+                ? 'VICTORY - YOU WIN!' 
+                : 'DEFEAT - OPPONENT WINS!')
+            : (isP1Winner ? 'VICTORY - PLAYER 1 WINS!' : 'PLAYER 2 WINS!')}
         </h1>
         <p className="text-xs text-neutral-400 font-mono uppercase tracking-widest mt-1">
           {winner.name.toUpperCase()} DOMINATES THE ARENA
@@ -188,4 +224,3 @@ export const ResultScreen: React.FC = () => {
     </div>
   );
 };
-
