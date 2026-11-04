@@ -11,6 +11,7 @@ import { HowToPlayModal } from './components/HowToPlayModal';
 import { SettingsModal } from './components/SettingsModal';
 import { CharacterCollectionModal } from './components/CharacterCollectionModal';
 import { OnlineRoomModal } from './components/OnlineRoomModal';
+import { MobileOrientationGuard } from './components/MobileOrientationGuard';
 
 export const App: React.FC = () => {
   const currentScreen = useGameStore((state) => state.currentScreen);
@@ -26,7 +27,8 @@ export const App: React.FC = () => {
       {currentScreen === 'BATTLE' && <BattleScreen />}
       {currentScreen === 'RESULT' && <ResultScreen />}
 
-      {/* Global Modals */}
+      {/* Global Modals & Mobile Orientation Guard */}
+      <MobileOrientationGuard />
       <HowToPlayModal />
       <SettingsModal />
       <CharacterCollectionModal />

@@ -13,9 +13,7 @@ import {
   VolumeX, 
   RotateCcw, 
   Home, 
-  ShieldAlert, 
-  Zap, 
-  Sparkles 
+  Maximize
 } from 'lucide-react';
 
 export const BattleScreen: React.FC = () => {
@@ -196,13 +194,31 @@ export const BattleScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Pause Button */}
-          <button
-            onClick={togglePause}
-            className="pointer-events-auto p-2 rounded-lg bg-neutral-900/80 border border-neutral-800 hover:border-emerald-500 text-neutral-300 hover:text-emerald-400 transition"
-          >
-            <Pause className="w-4 h-4" />
-          </button>
+          {/* Top Actions: Fullscreen & Pause */}
+          <div className="flex items-center gap-2 pointer-events-auto">
+            <button
+              onClick={() => {
+                soundManager.playOmnitrixSelect();
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen?.();
+                } else {
+                  document.exitFullscreen?.();
+                }
+              }}
+              title="Fullscreen"
+              className="p-2 rounded-lg bg-neutral-900/80 border border-neutral-800 hover:border-emerald-500 text-neutral-300 hover:text-emerald-400 transition"
+            >
+              <Maximize className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={togglePause}
+              title="Pause"
+              className="p-2 rounded-lg bg-neutral-900/80 border border-neutral-800 hover:border-emerald-500 text-neutral-300 hover:text-emerald-400 transition"
+            >
+              <Pause className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Health & Energy Bars Row */}
